@@ -1,0 +1,99 @@
+.vault-agent-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 8px;
+}
+
+.vault-agent-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vault-agent-messages {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--background-primary);
+}
+
+.vault-agent-msg {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.vault-agent-msg-user {
+  border-left: 3px solid var(--text-accent);
+}
+
+.vault-agent-msg-assistant {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.vault-agent-msg-tool,
+.vault-agent-msg-receipt {
+  border-left: 3px solid var(--color-yellow);
+}
+
+.vault-agent-msg-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.vault-agent-msg-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-text);
+}
+
+.vault-agent-pending {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.vault-agent-op-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.vault-agent-op-path {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.vault-agent-op-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.vault-agent-op-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vault-agent-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.vault-agent-input {
+  flex: 1;
+}
