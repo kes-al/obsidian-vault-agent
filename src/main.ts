@@ -22,6 +22,8 @@ export default class VaultAgentPlugin extends Plugin {
   private providerFactory!: ModelProviderFactory;
   private router!: WorkflowRouter;
   private activeView: VaultAgentView | null = null;
+  private busy = false;
+  private busyStartedAt: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadPluginSettings();
@@ -130,29 +132,59 @@ export default class VaultAgentPlugin extends Plugin {
     return this.writeStore.listPending().filter((op) => sessionIds.has(op.id));
   }
 
+  isBusy(): boolean {
+    return this.busy;
+  }
+
+  getBusyElapsedSeconds(): number {
+    if (!this.busy || this.busyStartedAt === null) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((Date.now() - this.busyStartedAt) / 1000));
+  }
+
+  getWritePolicy(): "preview_required" | "auto_apply" {
+    return this.settings.writePolicy;
+  }
+
   async runInput(input: string): Promise<void> {
     const text = input.trim();
     if (!text) {
       return;
     }
-
-    this.sessionStore.addMessage("user", text);
-    const result = await this.router.runInput(text, this.workflowDeps());
-
-    if (result.operations && result.operations.length > 0) {
-      this.writeStore.queue(result.operations);
-      this.sessionStore.addOperations(result.operations);
-
-      if (this.settings.writePolicy === "auto_apply") {
-        for (const op of result.operations) {
-          await this.applyOperation(op.id);
-        }
-      }
+    if (this.busy) {
+      new Notice("Vault Agent is still processing the previous request.");
+      return;
     }
 
-    this.sessionStore.addMessage("assistant", result.assistantMessage);
-    for (const receipt of result.receipts ?? []) {
-      this.sessionStore.addMessage("receipt", receipt);
+    this.busy = true;
+    this.busyStartedAt = Date.now();
+    this.activeView?.render();
+    this.sessionStore.addMessage("user", text);
+
+    try {
+      const result = await this.router.runInput(text, this.workflowDeps());
+
+      if (result.operations && result.operations.length > 0) {
+        this.writeStore.queue(result.operations);
+        this.sessionStore.addOperations(result.operations);
+
+        if (this.settings.writePolicy === "auto_apply") {
+          for (const op of result.operations) {
+            await this.applyOperation(op.id);
+          }
+        }
+      }
+
+      this.sessionStore.addMessage("assistant", result.assistantMessage);
+      for (const receipt of result.receipts ?? []) {
+        this.sessionStore.addMessage("receipt", receipt);
+      }
+    } finally {
+      this.busy = false;
+      this.busyStartedAt = null;
+      this.activeView?.render();
     }
   }
 

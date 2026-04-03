@@ -19,6 +19,8 @@ Vault Agent is designed as a configurable engine:
 - flexible workflow layer: command packs from vault files or plain-language mode
 - bring-your-own-model: local endpoint or cloud provider
 
+The command names shown in this repository are opinionated defaults from the original author workflow. They are examples, not a universal standard. You should customize command packs and workflow behavior for your own vault structure.
+
 ## What is implemented
 
 - Dedicated `Vault Agent` workspace view inside Obsidian.
@@ -32,7 +34,7 @@ Vault Agent is designed as a configurable engine:
 - Command-pack discovery from:
   - `/.vault-agent/commands/*.md`
   - `/.claude/commands/*.md`
-- Built-in deterministic workflows:
+- Default reference workflows (customize these for your own workflow):
   - `/capture`
   - `/startday`
   - `/closeday`
@@ -100,6 +102,19 @@ Use this if you want local inference:
 - Run `/startday` and `/closeday` as your daily bookends.
 - Keep write policy on `preview_required` for safer mobile editing.
 
+## Command customization
+
+The plugin supports command packs loaded from vault folders:
+
+- `/.vault-agent/commands/*.md`
+- `/.claude/commands/*.md`
+
+Recommended:
+
+- keep command names and prompts specific to your own workflow
+- adjust routing logic and section conventions for your vault
+- treat `/capture`, `/startday`, `/closeday`, and `/context-load` as starter patterns
+
 ## Settings UX
 
 Settings use accordion sections for mobile:
@@ -113,6 +128,24 @@ Routing includes quick presets:
 - `All -> openrouter`
 - `All -> local`
 
+## Write policy behavior
+
+`Write policy` controls how file changes are applied:
+
+- `preview_required`:
+  - writes are staged in **Pending Writes**
+  - you explicitly tap `Apply` or `Skip`
+- `auto_apply`:
+  - writes are applied immediately after generation
+  - no pending queue interaction is required
+  - the Pending Writes panel auto-hides when idle
+
+During in-flight requests, the UI shows:
+
+- disabled input/send button
+- spinner + elapsed timer in status
+- spinner + elapsed timer in Pending Writes area
+
 ## Project layout
 
 - `src/main.ts`: plugin entrypoint and orchestration
@@ -124,7 +157,7 @@ Routing includes quick presets:
 
 ## Current limitations
 
-- Only four built-in workflows currently perform deterministic vault writes.
+- Only four default reference workflows currently perform deterministic vault writes.
 - Command-pack execution currently treats command files as instruction prompts (not full deterministic interpreters).
 - API keys are stored in plugin data for the vault profile, not in markdown files.
 - No automated tests are included yet.

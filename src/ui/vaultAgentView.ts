@@ -7,6 +7,9 @@ export class VaultAgentView extends ItemView {
   private messagesEl!: HTMLElement;
   private pendingEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
+  private sendBtn!: HTMLButtonElement;
+  private statusEl!: HTMLElement;
+  private busyTicker: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: VaultAgentPlugin) {
     super(leaf);
@@ -32,6 +35,7 @@ export class VaultAgentView extends ItemView {
 
     this.messagesEl = contentEl.createDiv({ cls: "vault-agent-messages" });
     this.pendingEl = contentEl.createDiv({ cls: "vault-agent-pending" });
+    this.statusEl = contentEl.createDiv({ cls: "vault-agent-status" });
 
     const composer = contentEl.createDiv({ cls: "vault-agent-composer" });
     this.inputEl = composer.createEl("textarea", {
@@ -46,19 +50,22 @@ export class VaultAgentView extends ItemView {
       }
     });
 
-    const sendBtn = composer.createEl("button", { text: "Send", cls: "mod-cta" });
-    sendBtn.onclick = () => void this.submitInput();
+    this.sendBtn = composer.createEl("button", { text: "Send", cls: "mod-cta" });
+    this.sendBtn.onclick = () => void this.submitInput();
 
     this.render();
+    this.startBusyTicker();
   }
 
   async onClose(): Promise<void> {
+    this.stopBusyTicker();
     this.plugin.detachView(this);
   }
 
   render(): void {
     this.renderMessages();
     this.renderPending();
+    this.renderStatus();
   }
 
   private buildToolbar(toolbar: HTMLElement): void {
@@ -95,12 +102,34 @@ export class VaultAgentView extends ItemView {
   }
 
   private renderPending(): void {
+    const busy = this.plugin.isBusy();
+    const autoApply = this.plugin.getWritePolicy() === "auto_apply";
     this.pendingEl.empty();
     const pending = this.plugin.getPendingOperations();
 
+    if (autoApply && pending.length === 0 && !busy) {
+      this.pendingEl.style.display = "none";
+      return;
+    }
+    this.pendingEl.style.display = "";
+
     this.pendingEl.createEl("h4", { text: `Pending Writes (${pending.length})` });
+
+    if (busy) {
+      const running = this.pendingEl.createDiv({ cls: "vault-agent-pending-running" });
+      running.createDiv({ cls: "vault-agent-spinner" });
+      running.createDiv({
+        cls: "vault-agent-status-text",
+        text: `Working... ${formatElapsed(this.plugin.getBusyElapsedSeconds())}`
+      });
+    }
+
     if (pending.length === 0) {
-      this.pendingEl.createEl("p", { text: "No pending writes." });
+      if (!busy) {
+        this.pendingEl.createEl("p", {
+          text: autoApply ? "Auto-apply is enabled. No pending writes." : "No pending writes."
+        });
+      }
       return;
     }
 
@@ -139,6 +168,46 @@ export class VaultAgentView extends ItemView {
       new Notice(`Vault Agent error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  private renderStatus(): void {
+    this.statusEl.empty();
+    const busy = this.plugin.isBusy();
+    this.inputEl.disabled = busy;
+    this.sendBtn.disabled = busy;
+
+    if (!busy) {
+      return;
+    }
+
+    const row = this.statusEl.createDiv({ cls: "vault-agent-status-row" });
+    row.createDiv({ cls: "vault-agent-spinner" });
+    row.createDiv({
+      text: `Vault Agent is thinking... ${formatElapsed(this.plugin.getBusyElapsedSeconds())}`,
+      cls: "vault-agent-status-text"
+    });
+  }
+
+  private startBusyTicker(): void {
+    if (this.busyTicker !== null) {
+      return;
+    }
+
+    this.busyTicker = window.setInterval(() => {
+      if (!this.plugin.isBusy()) {
+        return;
+      }
+      this.renderStatus();
+      this.renderPending();
+    }, 1000);
+  }
+
+  private stopBusyTicker(): void {
+    if (this.busyTicker === null) {
+      return;
+    }
+    window.clearInterval(this.busyTicker);
+    this.busyTicker = null;
+  }
 }
 
 function formatPreview(before: string, after: string): string {
@@ -148,6 +217,12 @@ function formatPreview(before: string, after: string): string {
   const previewBefore = before.slice(0, 900);
   const previewAfter = after.slice(0, 900);
   return `--- before ---\n${previewBefore}\n\n--- after ---\n${previewAfter}`;
+}
+
+function formatElapsed(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
 type WorkspaceLeaf = import("obsidian").WorkspaceLeaf;

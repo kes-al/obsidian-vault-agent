@@ -1454,6 +1454,7 @@ var VAULT_AGENT_VIEW_TYPE = "vault-agent-view";
 var VaultAgentView = class extends import_obsidian6.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
+    this.busyTicker = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -1471,6 +1472,7 @@ var VaultAgentView = class extends import_obsidian6.ItemView {
     this.buildToolbar(toolbar);
     this.messagesEl = contentEl.createDiv({ cls: "vault-agent-messages" });
     this.pendingEl = contentEl.createDiv({ cls: "vault-agent-pending" });
+    this.statusEl = contentEl.createDiv({ cls: "vault-agent-status" });
     const composer = contentEl.createDiv({ cls: "vault-agent-composer" });
     this.inputEl = composer.createEl("textarea", {
       cls: "vault-agent-input",
@@ -1483,16 +1485,19 @@ var VaultAgentView = class extends import_obsidian6.ItemView {
         void this.submitInput();
       }
     });
-    const sendBtn = composer.createEl("button", { text: "Send", cls: "mod-cta" });
-    sendBtn.onclick = () => void this.submitInput();
+    this.sendBtn = composer.createEl("button", { text: "Send", cls: "mod-cta" });
+    this.sendBtn.onclick = () => void this.submitInput();
     this.render();
+    this.startBusyTicker();
   }
   async onClose() {
+    this.stopBusyTicker();
     this.plugin.detachView(this);
   }
   render() {
     this.renderMessages();
     this.renderPending();
+    this.renderStatus();
   }
   buildToolbar(toolbar) {
     const openCapture = toolbar.createEl("button", { text: "/capture" });
@@ -1520,11 +1525,30 @@ var VaultAgentView = class extends import_obsidian6.ItemView {
     }
   }
   renderPending() {
+    const busy = this.plugin.isBusy();
+    const autoApply = this.plugin.getWritePolicy() === "auto_apply";
     this.pendingEl.empty();
     const pending = this.plugin.getPendingOperations();
+    if (autoApply && pending.length === 0 && !busy) {
+      this.pendingEl.style.display = "none";
+      return;
+    }
+    this.pendingEl.style.display = "";
     this.pendingEl.createEl("h4", { text: `Pending Writes (${pending.length})` });
+    if (busy) {
+      const running = this.pendingEl.createDiv({ cls: "vault-agent-pending-running" });
+      running.createDiv({ cls: "vault-agent-spinner" });
+      running.createDiv({
+        cls: "vault-agent-status-text",
+        text: `Working... ${formatElapsed(this.plugin.getBusyElapsedSeconds())}`
+      });
+    }
     if (pending.length === 0) {
-      this.pendingEl.createEl("p", { text: "No pending writes." });
+      if (!busy) {
+        this.pendingEl.createEl("p", {
+          text: autoApply ? "Auto-apply is enabled. No pending writes." : "No pending writes."
+        });
+      }
       return;
     }
     for (const op of pending) {
@@ -1557,6 +1581,40 @@ var VaultAgentView = class extends import_obsidian6.ItemView {
       new import_obsidian6.Notice(`Vault Agent error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  renderStatus() {
+    this.statusEl.empty();
+    const busy = this.plugin.isBusy();
+    this.inputEl.disabled = busy;
+    this.sendBtn.disabled = busy;
+    if (!busy) {
+      return;
+    }
+    const row = this.statusEl.createDiv({ cls: "vault-agent-status-row" });
+    row.createDiv({ cls: "vault-agent-spinner" });
+    row.createDiv({
+      text: `Vault Agent is thinking... ${formatElapsed(this.plugin.getBusyElapsedSeconds())}`,
+      cls: "vault-agent-status-text"
+    });
+  }
+  startBusyTicker() {
+    if (this.busyTicker !== null) {
+      return;
+    }
+    this.busyTicker = window.setInterval(() => {
+      if (!this.plugin.isBusy()) {
+        return;
+      }
+      this.renderStatus();
+      this.renderPending();
+    }, 1e3);
+  }
+  stopBusyTicker() {
+    if (this.busyTicker === null) {
+      return;
+    }
+    window.clearInterval(this.busyTicker);
+    this.busyTicker = null;
+  }
 };
 function formatPreview(before, after) {
   if (before === after) {
@@ -1570,6 +1628,11 @@ ${previewBefore}
 --- after ---
 ${previewAfter}`;
 }
+function formatElapsed(totalSeconds) {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 // src/main.ts
 var VaultAgentPlugin = class extends import_obsidian7.Plugin {
@@ -1577,6 +1640,8 @@ var VaultAgentPlugin = class extends import_obsidian7.Plugin {
     super(...arguments);
     this.settings = structuredClone(DEFAULT_SETTINGS);
     this.activeView = null;
+    this.busy = false;
+    this.busyStartedAt = null;
   }
   async onload() {
     await this.loadPluginSettings();
@@ -1671,26 +1736,51 @@ var VaultAgentPlugin = class extends import_obsidian7.Plugin {
     const sessionIds = new Set(this.sessionStore.getActive().pendingOperationIds);
     return this.writeStore.listPending().filter((op) => sessionIds.has(op.id));
   }
+  isBusy() {
+    return this.busy;
+  }
+  getBusyElapsedSeconds() {
+    if (!this.busy || this.busyStartedAt === null) {
+      return 0;
+    }
+    return Math.max(0, Math.floor((Date.now() - this.busyStartedAt) / 1e3));
+  }
+  getWritePolicy() {
+    return this.settings.writePolicy;
+  }
   async runInput(input) {
-    var _a;
+    var _a, _b, _c;
     const text = input.trim();
     if (!text) {
       return;
     }
+    if (this.busy) {
+      new import_obsidian7.Notice("Vault Agent is still processing the previous request.");
+      return;
+    }
+    this.busy = true;
+    this.busyStartedAt = Date.now();
+    (_a = this.activeView) == null ? void 0 : _a.render();
     this.sessionStore.addMessage("user", text);
-    const result = await this.router.runInput(text, this.workflowDeps());
-    if (result.operations && result.operations.length > 0) {
-      this.writeStore.queue(result.operations);
-      this.sessionStore.addOperations(result.operations);
-      if (this.settings.writePolicy === "auto_apply") {
-        for (const op of result.operations) {
-          await this.applyOperation(op.id);
+    try {
+      const result = await this.router.runInput(text, this.workflowDeps());
+      if (result.operations && result.operations.length > 0) {
+        this.writeStore.queue(result.operations);
+        this.sessionStore.addOperations(result.operations);
+        if (this.settings.writePolicy === "auto_apply") {
+          for (const op of result.operations) {
+            await this.applyOperation(op.id);
+          }
         }
       }
-    }
-    this.sessionStore.addMessage("assistant", result.assistantMessage);
-    for (const receipt of (_a = result.receipts) != null ? _a : []) {
-      this.sessionStore.addMessage("receipt", receipt);
+      this.sessionStore.addMessage("assistant", result.assistantMessage);
+      for (const receipt of (_b = result.receipts) != null ? _b : []) {
+        this.sessionStore.addMessage("receipt", receipt);
+      }
+    } finally {
+      this.busy = false;
+      this.busyStartedAt = null;
+      (_c = this.activeView) == null ? void 0 : _c.render();
     }
   }
   async applyOperation(operationId) {
