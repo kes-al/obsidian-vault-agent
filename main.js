@@ -1300,12 +1300,32 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
+    this.accordionOpenState = {};
   }
   display() {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Vault Agent Settings" });
-    new import_obsidian5.Setting(containerEl).setName("Default provider").setDesc("Used when workflow routing is not explicitly set.").addDropdown((dropdown) => {
+    containerEl.createEl("p", {
+      text: "Use sections below to keep setup compact on mobile."
+    });
+    const general = this.createAccordion(containerEl, "general", "General", true);
+    this.renderGeneralSettings(general);
+    const routing = this.createAccordion(containerEl, "routing", "Workflow Routing", false);
+    this.renderRoutingSettings(routing);
+    const providersRoot = this.createAccordion(containerEl, "providers", "Providers", false);
+    for (const provider of PROVIDERS) {
+      const providerSection = this.createAccordion(
+        providersRoot,
+        `provider-${provider}`,
+        provider,
+        provider === this.plugin.settings.defaultProvider
+      );
+      this.renderProviderSection(providerSection, provider);
+    }
+  }
+  renderGeneralSettings(container) {
+    new import_obsidian5.Setting(container).setName("Default provider").setDesc("Used when workflow routing is not explicitly set.").addDropdown((dropdown) => {
       for (const provider of PROVIDERS) {
         dropdown.addOption(provider, provider);
       }
@@ -1315,7 +1335,7 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.persistSettings();
       });
     });
-    new import_obsidian5.Setting(containerEl).setName("Write policy").setDesc("Preview writes before apply, or auto-apply all generated writes.").addDropdown((dropdown) => {
+    new import_obsidian5.Setting(container).setName("Write policy").setDesc("Preview writes before apply, or auto-apply all generated writes.").addDropdown((dropdown) => {
       dropdown.addOption("preview_required", "preview_required");
       dropdown.addOption("auto_apply", "auto_apply");
       dropdown.setValue(this.plugin.settings.writePolicy);
@@ -1324,7 +1344,7 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.persistSettings();
       });
     });
-    new import_obsidian5.Setting(containerEl).setName("Command paths").setDesc("One path per line. Commands are loaded from these vault folders.").addTextArea((area) => {
+    new import_obsidian5.Setting(container).setName("Command paths").setDesc("One path per line. Commands are loaded from these vault folders.").addTextArea((area) => {
       area.setPlaceholder(".vault-agent/commands\n.claude/commands");
       area.setValue(this.plugin.settings.commandPaths.join("\n"));
       area.onChange(async (value) => {
@@ -1332,9 +1352,31 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.persistSettings();
       });
     });
-    containerEl.createEl("h3", { text: "Workflow Routing" });
+  }
+  renderRoutingSettings(container) {
+    new import_obsidian5.Setting(container).setName("Quick presets").setDesc("Set all workflow routes with one tap.").addButton((btn) => btn.setButtonText("All -> openrouter").onClick(async () => {
+      for (const key of WORKFLOW_KEYS) {
+        this.plugin.settings.routing[key] = "openrouter";
+      }
+      this.plugin.settings.defaultProvider = "openrouter";
+      await this.plugin.persistSettings();
+      this.accordionOpenState.routing = true;
+      this.accordionOpenState.providers = true;
+      this.accordionOpenState["provider-openrouter"] = true;
+      this.display();
+    })).addButton((btn) => btn.setButtonText("All -> local").onClick(async () => {
+      for (const key of WORKFLOW_KEYS) {
+        this.plugin.settings.routing[key] = "local";
+      }
+      this.plugin.settings.defaultProvider = "local";
+      await this.plugin.persistSettings();
+      this.accordionOpenState.routing = true;
+      this.accordionOpenState.providers = true;
+      this.accordionOpenState["provider-local"] = true;
+      this.display();
+    }));
     for (const workflow of WORKFLOW_KEYS) {
-      new import_obsidian5.Setting(containerEl).setName(workflow).addDropdown((dropdown) => {
+      new import_obsidian5.Setting(container).setName(workflow).addDropdown((dropdown) => {
         for (const provider of PROVIDERS) {
           dropdown.addOption(provider, provider);
         }
@@ -1345,14 +1387,9 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
         });
       });
     }
-    containerEl.createEl("h3", { text: "Provider Configuration" });
-    for (const provider of PROVIDERS) {
-      this.renderProviderSection(containerEl, provider);
-    }
   }
   renderProviderSection(container, provider) {
     const config = this.plugin.settings.providers[provider];
-    container.createEl("h4", { text: provider });
     new import_obsidian5.Setting(container).setName("Enabled").addToggle((toggle) => {
       toggle.setValue(config.enabled);
       toggle.onChange(async (value) => {
@@ -1394,6 +1431,16 @@ var VaultAgentSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.persistSettings();
       });
     });
+  }
+  createAccordion(parent, key, title, defaultOpen) {
+    var _a;
+    const details = parent.createEl("details");
+    details.open = (_a = this.accordionOpenState[key]) != null ? _a : defaultOpen;
+    details.addEventListener("toggle", () => {
+      this.accordionOpenState[key] = details.open;
+    });
+    details.createEl("summary", { text: title });
+    return details.createDiv({ cls: "vault-agent-settings-section" });
   }
 };
 

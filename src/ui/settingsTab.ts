@@ -7,18 +7,42 @@ const PROVIDERS: ProviderId[] = ["local", "openrouter", "openai", "anthropic"];
 
 export class VaultAgentSettingTab extends PluginSettingTab {
   plugin: VaultAgentPlugin;
+  private accordionOpenState: Record<string, boolean>;
 
   constructor(app: App, plugin: VaultAgentPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+    this.accordionOpenState = {};
   }
 
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Vault Agent Settings" });
+    containerEl.createEl("p", {
+      text: "Use sections below to keep setup compact on mobile."
+    });
 
-    new Setting(containerEl)
+    const general = this.createAccordion(containerEl, "general", "General", true);
+    this.renderGeneralSettings(general);
+
+    const routing = this.createAccordion(containerEl, "routing", "Workflow Routing", false);
+    this.renderRoutingSettings(routing);
+
+    const providersRoot = this.createAccordion(containerEl, "providers", "Providers", false);
+    for (const provider of PROVIDERS) {
+      const providerSection = this.createAccordion(
+        providersRoot,
+        `provider-${provider}`,
+        provider,
+        provider === this.plugin.settings.defaultProvider
+      );
+      this.renderProviderSection(providerSection, provider);
+    }
+  }
+
+  private renderGeneralSettings(container: HTMLElement): void {
+    new Setting(container)
       .setName("Default provider")
       .setDesc("Used when workflow routing is not explicitly set.")
       .addDropdown((dropdown) => {
@@ -32,7 +56,7 @@ export class VaultAgentSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
+    new Setting(container)
       .setName("Write policy")
       .setDesc("Preview writes before apply, or auto-apply all generated writes.")
       .addDropdown((dropdown) => {
@@ -45,7 +69,7 @@ export class VaultAgentSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
+    new Setting(container)
       .setName("Command paths")
       .setDesc("One path per line. Commands are loaded from these vault folders.")
       .addTextArea((area) => {
@@ -59,10 +83,39 @@ export class VaultAgentSettingTab extends PluginSettingTab {
           await this.plugin.persistSettings();
         });
       });
+  }
 
-    containerEl.createEl("h3", { text: "Workflow Routing" });
+  private renderRoutingSettings(container: HTMLElement): void {
+    new Setting(container)
+      .setName("Quick presets")
+      .setDesc("Set all workflow routes with one tap.")
+      .addButton((btn) =>
+        btn.setButtonText("All -> openrouter").onClick(async () => {
+          for (const key of WORKFLOW_KEYS) {
+            this.plugin.settings.routing[key] = "openrouter";
+          }
+          this.plugin.settings.defaultProvider = "openrouter";
+          await this.plugin.persistSettings();
+          this.accordionOpenState.routing = true;
+          this.accordionOpenState.providers = true;
+          this.accordionOpenState["provider-openrouter"] = true;
+          this.display();
+        }))
+      .addButton((btn) =>
+        btn.setButtonText("All -> local").onClick(async () => {
+          for (const key of WORKFLOW_KEYS) {
+            this.plugin.settings.routing[key] = "local";
+          }
+          this.plugin.settings.defaultProvider = "local";
+          await this.plugin.persistSettings();
+          this.accordionOpenState.routing = true;
+          this.accordionOpenState.providers = true;
+          this.accordionOpenState["provider-local"] = true;
+          this.display();
+        }));
+
     for (const workflow of WORKFLOW_KEYS) {
-      new Setting(containerEl)
+      new Setting(container)
         .setName(workflow)
         .addDropdown((dropdown) => {
           for (const provider of PROVIDERS) {
@@ -75,16 +128,10 @@ export class VaultAgentSettingTab extends PluginSettingTab {
           });
         });
     }
-
-    containerEl.createEl("h3", { text: "Provider Configuration" });
-    for (const provider of PROVIDERS) {
-      this.renderProviderSection(containerEl, provider);
-    }
   }
 
   private renderProviderSection(container: HTMLElement, provider: ProviderId): void {
     const config = this.plugin.settings.providers[provider];
-    container.createEl("h4", { text: provider });
 
     new Setting(container)
       .setName("Enabled")
@@ -142,6 +189,16 @@ export class VaultAgentSettingTab extends PluginSettingTab {
           await this.plugin.persistSettings();
         });
       });
+  }
+
+  private createAccordion(parent: HTMLElement, key: string, title: string, defaultOpen: boolean): HTMLElement {
+    const details = parent.createEl("details");
+    details.open = this.accordionOpenState[key] ?? defaultOpen;
+    details.addEventListener("toggle", () => {
+      this.accordionOpenState[key] = details.open;
+    });
+    details.createEl("summary", { text: title });
+    return details.createDiv({ cls: "vault-agent-settings-section" });
   }
 }
 
